@@ -6,7 +6,7 @@ import pytest
 import werkzeug.datastructures
 
 
-def test_search(client, app):
+def test_search(client):
     search_submission = {
         'source': ['urn:cts:latinLit:phi0472.phi001:28.14'],
         'target': ['urn:cts:latinLit:phi0690.phi002:1.21'],
@@ -24,16 +24,15 @@ def test_search(client, app):
     }
 
     headers = werkzeug.datastructures.Headers()
+    headers['Content-Type'] = 'application/json; charset=utf-8'
     headers['Content-Encoding'] = 'gzip'
     response = client.post(
         '/parallels/',
-        data=gzip.compress(json.dumps(search_submission).encode()),
+        data=gzip.compress(json.dumps(search_submission).encode(encoding='utf-8')),
         headers=headers,
     )
 
-    print(response.headers['Location'])
     results = client.get(
         response.headers['Location']
     )
-    # TODO figure out why this isn't working
     assert results.status_code == 200

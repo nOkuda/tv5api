@@ -17,9 +17,8 @@ def submit_search():
     response.status_code = 201
     response.status = '201 Created'
     results_id = uuid.uuid4().hex
-    print(bp.url_prefix)
-    print(results_id)
-    response.headers['Location'] = os.path.join(bp.url_prefix, results_id)
+    # we want the final '/' on the URL
+    response.headers['Location'] = os.path.join(bp.url_prefix, results_id, '')
     return response
 
 
