@@ -36,3 +36,4 @@ def test_search(client):
         response.headers['Location']
     )
     assert results.status_code == 200
+    # TODO fill out with expected result

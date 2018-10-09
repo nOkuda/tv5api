@@ -1,6 +1,7 @@
 import json
 import os
 
+import flask
 import werkzeug.datastructures
 
 
@@ -15,7 +16,7 @@ def test_query_texts_with_fields(app, client):
     year = 1
     lang = 'latin'
     with app.test_request_context():
-        endpoint = flask.url_for('texts', after=year, language=lang)
+        endpoint = flask.url_for('texts.query_texts', after=year, language=lang)
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.get_json()
@@ -23,6 +24,11 @@ def test_query_texts_with_fields(app, client):
     for text in data['texts']:
         assert text['year'] >= year
         assert text['language'] == lang
+
+
+def test_get_text_units(app, client):
+    # TODO
+    assert False
 
 
 if os.environ.get('ADMIN_INSTANCE'):
@@ -36,7 +42,7 @@ if os.environ.get('ADMIN_INSTANCE'):
 
         # make sure the new text isn't in the database
         with app.test_request_context():
-            endpoint = flask.url_for('texts', cts_urn=new_cts_urn)
+            endpoint = flask.url_for('texts.get_text', cts_urn=new_cts_urn)
         assert not client.get(endpoint).get_json()
 
         to_be_added = {
@@ -123,7 +129,7 @@ if os.environ.get('ADMIN_INSTANCE'):
     def test_patch_then_replace_text(app, client):
         with app.test_request_context():
             endpoint = flask.url_for(
-                'texts',
+                'texts.get_text',
                 cts_urn='urn:cts:latinLit:phi0472.phi001')
         before = client.get(endpoint).get_json()
 
@@ -138,7 +144,7 @@ if os.environ.get('ADMIN_INSTANCE'):
             data=json.dumps(patch).encode(encoding='utf-8'),
             headers=headers,
         )
-        assert response.status_code = 200
+        assert response.status_code == 200
         data = response.get_json()
         assert 'new_key' in data and data['new_key'] == 'new_value'
         assert 'title' in data and data['title'] == 'Pharsalia'
@@ -169,11 +175,11 @@ if os.environ.get('ADMIN_INSTANCE'):
         specific_urn = base_urn + ':1.1'
         with app.test_request_context():
             base_endpoint = flask.url_for(
-                'texts',
+                'texts.get_text',
                 cts_urn=base_urn,
             )
             endpoint = flask.url_for(
-                'texts',
+                'texts.get_text',
                 cts_urn=specific_urn,
             )
         response = client.get(endpoint)
@@ -201,7 +207,7 @@ if os.environ.get('ADMIN_INSTANCE'):
         nonexistent = 'DEADBEEF'
         with app.test_request_context():
             endpoint = flask.url_for(
-                'texts',
+                'texts.get_text',
                 cts_urn=nonexistent,
             )
 

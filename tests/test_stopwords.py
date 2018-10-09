@@ -1,3 +1,10 @@
+import json
+import os
+
+import flask
+import werkzeug.datastructures
+
+
 def test_stopwords(client):
     # TODO fill this in
     assert False
@@ -5,14 +12,14 @@ def test_stopwords(client):
 
 def test_stopwords_lists(app, client):
     with app.test_request_context():
-        endpoint = flask.url_for('stopwords', 'lists')
+        endpoint = flask.url_for('stopwords.query_stopwords_lists')
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.get_json()
     assert 'list_names' in data and isinstance(data['list_names'], list) and data['list_names']
 
     with app.test_request_context():
-        endpoint = flask.url_for('stopwords', 'lists', data['list_names'][0])
+        endpoint = flask.url_for('stopwords.get_stopwords_list', name=data['list_names'][0])
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.get_json()
@@ -23,7 +30,7 @@ if os.environ.get('ADMIN_INSTANCE'):
     def test_add_and_replace_stopwords_list(app, client):
         new_list = 'im-new'
         with app.test_request_context():
-            endpoint = flask.url_for('stopwords', 'lists', new_list)
+            endpoint = flask.url_for('stopwords.get_stopwords_list', name=new_list)
         response = client.get(endpoint)
         assert response.status_code == 404
 
@@ -32,7 +39,7 @@ if os.environ.get('ADMIN_INSTANCE'):
             'stopwords': ['a', 'b'],
         }
         with app.test_request_context():
-            post_endpoint = flask.url_for('stopwords', 'lists')
+            post_endpoint = flask.url_for('stopwords.add_stopwords_list')
         headers = werkzeug.datastructures.Headers()
         headers['Content-Type'] = 'application/json; charset=utf-8'
         response = client.post(
@@ -85,7 +92,7 @@ if os.environ.get('ADMIN_INSTANCE'):
             'stopwords': ['a', 'b'],
         }
         with app.test_request_context():
-            post_endpoint = flask.url_for('stopwords', 'lists')
+            post_endpoint = flask.url_for('stopwords.add_stopwords_list')
         headers = werkzeug.datastructures.Headers()
         headers['Content-Type'] = 'application/json; charset=utf-8'
         response = client.post(
@@ -103,7 +110,7 @@ if os.environ.get('ADMIN_INSTANCE'):
     def test_nonexistent_lists(app, client):
         nonexistent = 'i-dont-exist'
         with app.test_request_context():
-            endpoint = flask.url_for('stopwords', 'lists', nonexistent)
+            endpoint = flask.url_for('stopwords.get_stopwords_list', name=nonexistent)
         response = client.get(endpoint)
         assert response.status_code == 404
         data = response.get_json()
