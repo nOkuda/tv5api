@@ -2,8 +2,8 @@
 import urllib.parse
 
 import flask
-import pymongo
 
+import tesserae.db
 
 def _load_config(app, test_config):
     """Load configuration into `app`"""
@@ -21,16 +21,10 @@ def _connect_database(app):
     From this point forward, before_request exposes access to the database via
     g.db.
     """
-    # TODO update with new TessMongoConnection
-    if not app.config['MONGO_USER']:
-        db_url = 'mongodb://localhost/'
-    else:
-        db_url = 'mongodb://{}:{}@localhost/'.format(
-            app.config['MONGO_USER'],
-            app.config['MONGO_PASSWORD']
-        )
     # http://librelist.com/browser/flask/2013/8/21/flask-pymongo-and-blueprint/#811dd1b119757bc09d28425a5bda86d9
-    db = pymongo.MongoClient(db_url)[app.config['DB_NAME']]
+    db = tesserae.db.TessMongoConnection(app.config['MONGO_HOSTNAME'],
+            app.config['MONGO_PORT'], app.config['MONGO_USER'],
+            app.config['MONGO_PASSWORD'], db=app.config['DB_NAME'])
 
     @app.before_request
     def before_request():

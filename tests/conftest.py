@@ -4,7 +4,7 @@ import pytest
 import tv5api
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def app():
     cur_app = tv5api.create_app({
         'MONGO_USER': None,
@@ -19,6 +19,6 @@ def app():
     yield cur_app
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def client(app):
     return app.test_client()
