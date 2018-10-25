@@ -1,10 +1,11 @@
 """The family of /texts/ endpoints"""
 import json
 import os
+import urllib.parse
 
 import flask
 
-import errors
+import tv5api.errors
 import tesserae.db.entities
 
 
@@ -20,38 +21,40 @@ def query_texts():
         grabbed = flask.request.args.get(allowed, None)
         if grabbed:
             filters[allowed] = grabbed
+    before_val = flask.request.args.get('before', None)
+    after_val = flask.request.args.get('after', None)
     try:
-        specials = {
-            'before': int(flask.request.args.get('before', None)),
-            'after': int(flask.request.args.get('after', None))
-        }
+        if before_val is not None:
+            before_val = int(before_val)
+        if after_val is not None:
+            after_val = int(after_val)
     except ValueError:
-        return errors.user_error(
+        return tv5api.errors.error(
             400,
             message='If used, "before" and "after" must have integer values.')
 
-    if specials['before'] and specials['after']:
+    if before_val is not None and after_val is not None:
         results = flask.g.db.find(
             tesserae.db.entities.Text.collection,
-            year_not=(specials['before'], specials['after']),
+            year_not=(before_val, after_val),
             **filters)
-    elif specials['before'] and not specials['after']:
+    elif before_val is not None and after_val is None:
         results = flask.g.db.find(
             tesserae.db.entities.Text.collection,
             # Assuming that lower limit pre-dates all texts in database
-            year=(-999999999999, specials['before']),
+            year=(-999999999999, before_val),
             **filters)
-    elif not specials['before'] and specials['after']:
+    elif not before_val is None and after_val is not None:
         results = flask.g.db.find(
             tesserae.db.entities.Text.collection,
             # Assuming that upper limit post-dates all texts in database
-            year=(specials['after'], 999999999999),
+            year=(after_val, 999999999999),
             **filters)
     else:
         results = flask.g.db.find(
             tesserae.db.entities.Text.collection,
             **filters)
-    return flask.jsonify(texts=results)
+    return flask.jsonify(texts=[r.json_encode(exclude=['_id']) for r in results])
 
 
 @bp.route('/<cts_urn>/')
@@ -59,24 +62,24 @@ def get_text(cts_urn):
     """Retrieve specific text's metadata"""
     found = flask.g.db.find(
         tesserae.db.entities.Text.collection,
-        cts_urn=cts_urn)[0]
+        cts_urn=cts_urn)
     if not found:
         # TODO differentiate from case where CTS URN is overly specific (301)
-        return errors.error(
+        return tv5api.errors.error(
             404,
             cts_urn=cts_urn,
             message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
-    return flask.jsonify(found)
+    return flask.jsonify(found[0].json_encode(exclude=['_id']))
 
 
 @bp.route('/<cts_urn>/units/')
 def get_text_units(cts_urn):
     """Retrieve text chunks already in the database for the specified text"""
     # TODO
-    return flask.jsonify({})
+    return tv5api.errors.error(500, message='Not yet implemented')
 
 
-if os.environ.get('ADMIN_INSTANCE'):
+if os.environ.get('ADMIN_INSTANCE') == 'true':
     @bp.route('/', methods=['POST'])
     def add_text():
         received = flask.request.get_json()
@@ -88,7 +91,7 @@ if os.environ.get('ADMIN_INSTANCE'):
             if req not in received:
                 missing.append(req)
         if missing:
-            return errors.user_error(
+            return tv5api.errors.error(
                 400,
                 data=received,
                 message='The request data payload is missing the following required key(s): {}'.format(', '.join(missing)))
@@ -96,21 +99,28 @@ if os.environ.get('ADMIN_INSTANCE'):
         cts_urn = received['cts_urn']
         percent_encoded_cts_urn = urllib.parse.quote(cts_urn)
         if flask.g.db.find(tesserae.db.entities.Text.collection, cts_urn=cts_urn):
-            return errors.user_error(
+            return tv5api.errors.error(
                 400,
                 data=received,
                 message='The CTS URN provided ({}) already exists in the database. If you meant to update the text information, try a PATCH at https://tesserae.caset.buffalo.edu/texts/{}/.'.format(cts_urn, percent_encoded_cts_urn))
 
         # add text to database
         # TODO type checking here or in library?
-        data = flask.g.db.insert(tesserae.db.entities.Text(**received))
+        insert_result = flask.g.db.insert(tesserae.db.entities.Text(**received))
+
+        if not insert_result.inserted_ids:
+            return tv5api.errors.error(
+                500,
+                data=received,
+                message='Could not add to database')
 
         response = flask.Response()
         response.status_code = 201
         response.status = '201 Created'
         response.headers['Content-Location'] = os.path.join(
             bp.url_prefix, percent_encoded_cts_urn, '')
-        response.set_data(data)
+        response.headers['Content-Type'] = 'application/json; charset=utf-8'
+        response.set_data(flask.json.dumps(received).encode('utf-8'))
         return response
 
 
@@ -118,13 +128,14 @@ if os.environ.get('ADMIN_INSTANCE'):
     def update_text(cts_urn):
         found = flask.g.db.find(
             tesserae.db.entities.Text.collection,
-            cts_urn=cts_urn)[0]
+            cts_urn=cts_urn)
         if not found:
             # TODO differentiate from case where CTS URN is overly specific
             # (308)
-            return errors.error(
+            return tv5api.errors.error(
                 404,
                 cts_urn=cts_urn,
+                data=received,
                 message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
 
         received = flask.request.get_json()
@@ -134,15 +145,22 @@ if os.environ.get('ADMIN_INSTANCE'):
             if key in received:
                 problems.append(key)
         if problems:
-            return errors.user_error(
+            return tv5api.errors.error(
                 400,
                 cts_urn=cts_urn,
                 data=received,
                 message='Prohibited key(s) found in data payload: {}'.format(', '.join(problems)))
 
-        found.update(received)
+        found = found[0]
+        found.__dict__.update(received)
         updated = flask.g.db.update(found)
-        return flask.jsonify(updated)
+        if updated.matched_count != 1:
+            return tv5api.errors.error(
+                500,
+                cts_urn=cts_urn,
+                data=received,
+                message='Unexpected number of updates: {}'.format(updated.matched_count))
+        return get_text(cts_urn)
 
 
     @bp.route('/<cts_urn>/', methods=['DELETE'])
@@ -153,7 +171,7 @@ if os.environ.get('ADMIN_INSTANCE'):
         if not found:
             # TODO differentiate from case where CTS URN is overly specific
             # (308)
-            return errors.error(
+            return tv5api.errors.error(
                 404,
                 cts_urn=cts_urn,
                 message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))

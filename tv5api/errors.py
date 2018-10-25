@@ -4,5 +4,5 @@ import flask
 
 def error(status_code, **kwargs):
     response = flask.jsonify(**kwargs)
-    response.status_code == status_code
+    response.status_code = status_code
     return response

@@ -26,7 +26,7 @@ def test_stopwords_lists(app, client):
     assert 'stopwords' in data and isinstance(data['stopwords'], list)
 
 
-if os.environ.get('ADMIN_INSTANCE'):
+if os.environ.get('ADMIN_INSTANCE') == 'true':
     def test_add_and_replace_stopwords_list(app, client):
         new_list = 'im-new'
         with app.test_request_context():

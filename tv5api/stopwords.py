@@ -28,7 +28,7 @@ def get_stopwords_list(name):
     return flask.jsonify({})
 
 
-if os.environ.get('ADMIN_INSTANCE'):
+if os.environ.get('ADMIN_INSTANCE') == 'true':
     @bp.route('/lists/', methods=['POST'])
     def add_stopwords_list():
         # TODO actually implement

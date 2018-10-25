@@ -31,8 +31,8 @@ def test_get_text_units(app, client):
     assert False
 
 
-if os.environ.get('ADMIN_INSTANCE'):
-    def test_add_and_remove_text(client):
+if os.environ.get('ADMIN_INSTANCE') == 'true':
+    def test_add_and_remove_text(app, client):
         new_cts_urn = 'urn:cts:test'
 
         before = {
@@ -43,10 +43,17 @@ if os.environ.get('ADMIN_INSTANCE'):
         # make sure the new text isn't in the database
         with app.test_request_context():
             endpoint = flask.url_for('texts.get_text', cts_urn=new_cts_urn)
-        assert not client.get(endpoint).get_json()
+        response = client.get(endpoint)
+        assert response.status_code == 404
 
         to_be_added = {
+            'author': 'Bob',
             'cts_urn': new_cts_urn,
+            'is_prose': False,
+            'language': 'english',
+            'path': '/bob.txt',
+            'title': 'Bob Bob',
+            'year': 2018
         }
         headers = werkzeug.datastructures.Headers()
         headers['Content-Type'] = 'application/json; charset=utf-8'
@@ -75,7 +82,7 @@ if os.environ.get('ADMIN_INSTANCE'):
         response = client.delete(endpoint)
         # make sure the new text has been deleted
         assert response.status_code == 204
-        response = client.get(endpoint).get_json()
+        response = client.get(endpoint)
         assert response.status_code == 404
 
         # make sure adding then deleting doesn't mess up the database
@@ -127,14 +134,31 @@ if os.environ.get('ADMIN_INSTANCE'):
 
 
     def test_patch_then_replace_text(app, client):
+        new_cts_urn = 'urn:cts:test'
+        to_be_added = {
+            'author': 'Bob',
+            'cts_urn': new_cts_urn,
+            'is_prose': False,
+            'language': 'english',
+            'path': '/bob.txt',
+            'title': 'Bob Bob',
+            'year': 2018
+        }
+        headers = werkzeug.datastructures.Headers()
+        headers['Content-Type'] = 'application/json; charset=utf-8'
+        response = client.post(
+            '/texts/',
+            data=json.dumps(to_be_added).encode(encoding='utf-8'),
+            headers=headers,
+        )
+
         with app.test_request_context():
             endpoint = flask.url_for(
                 'texts.get_text',
-                cts_urn='urn:cts:latinLit:phi0472.phi001')
+                cts_urn=new_cts_urn)
         before = client.get(endpoint).get_json()
 
         patch = {
-            'new_key': 'new_value',
             'title': 'Pharsalia',
         }
         headers = werkzeug.datastructures.Headers()
@@ -146,7 +170,6 @@ if os.environ.get('ADMIN_INSTANCE'):
         )
         assert response.status_code == 200
         data = response.get_json()
-        assert 'new_key' in data and data['new_key'] == 'new_value'
         assert 'title' in data and data['title'] == 'Pharsalia'
         for k, v in data.items():
             if k not in patch:
@@ -168,6 +191,11 @@ if os.environ.get('ADMIN_INSTANCE'):
         data = response.get_json()
         for k, v in data.items():
             assert k in before and before[k] == v
+
+        response = client.delete(endpoint)
+        assert response.status_code == 204
+        response = client.get(endpoint).get_json()
+        assert response.status_code == 404
 
 
     def test_redirects(app, client):
