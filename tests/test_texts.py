@@ -1,5 +1,6 @@
 import json
 import os
+import urllib.parse
 
 import flask
 import werkzeug.datastructures
@@ -177,7 +178,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
         response = client.delete(endpoint)
         assert response.status_code == 204
-        response = client.get(endpoint).get_json()
+        response = client.get(endpoint)
         assert response.status_code == 404
 
         headers = werkzeug.datastructures.Headers()
@@ -194,41 +195,39 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
         response = client.delete(endpoint)
         assert response.status_code == 204
-        response = client.get(endpoint).get_json()
+        response = client.get(endpoint)
         assert response.status_code == 404
 
 
     def test_redirects(app, client):
         base_urn = 'urn:cts:latinLit:phi0472.phi001'
+        expected_end = urllib.parse.quote_plus(base_urn) + '/'
         specific_urn = base_urn + ':1.1'
         with app.test_request_context():
-            base_endpoint = flask.url_for(
-                'texts.get_text',
-                cts_urn=base_urn,
-            )
             endpoint = flask.url_for(
                 'texts.get_text',
                 cts_urn=specific_urn,
             )
         response = client.get(endpoint)
         assert response.status_code == 301
-        assert response.headers['Location'].endswith(base_endpoint)
+        assert response.headers['Location'].endswith(expected_end)
 
         headers = werkzeug.datastructures.Headers()
         headers['Content-Type'] = 'application/json; charset=utf-8'
+        patch = {'fail': 'this example will'}
         response = client.patch(
             endpoint,
             data=json.dumps(patch).encode(encoding='utf-8'),
             headers=headers,
         )
         assert response.status_code == 308
-        assert response.headers['Location'].endswith(base_endpoint)
+        assert response.headers['Location'].endswith(expected_end)
 
         response = client.delete(
             endpoint,
         )
         assert response.status_code == 308
-        assert response.headers['Location'].endswith(base_endpoint)
+        assert response.headers['Location'].endswith(expected_end)
 
 
     def test_nonexistent_text(app, client):

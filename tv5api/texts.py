@@ -60,11 +60,12 @@ def query_texts():
 @bp.route('/<cts_urn>/')
 def get_text(cts_urn):
     """Retrieve specific text's metadata"""
+    if cts_urn.count(':') > 3:
+        return tv5api.errors.too_specific(301, flask.request.path)
     found = flask.g.db.find(
         tesserae.db.entities.Text.collection,
         cts_urn=cts_urn)
     if not found:
-        # TODO differentiate from case where CTS URN is overly specific (301)
         return tv5api.errors.error(
             404,
             cts_urn=cts_urn,
@@ -126,19 +127,19 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
     @bp.route('/<cts_urn>/', methods=['PATCH'])
     def update_text(cts_urn):
+        received = flask.request.get_json()
+        if cts_urn.count(':') > 3:
+            return tv5api.errors.too_specific(308, flask.request.path)
         found = flask.g.db.find(
             tesserae.db.entities.Text.collection,
             cts_urn=cts_urn)
         if not found:
-            # TODO differentiate from case where CTS URN is overly specific
-            # (308)
             return tv5api.errors.error(
                 404,
                 cts_urn=cts_urn,
                 data=received,
                 message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
 
-        received = flask.request.get_json()
         prohibited = {'_id', 'id', 'cts_urn'}
         problems = []
         for key in prohibited:
@@ -165,12 +166,12 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
     @bp.route('/<cts_urn>/', methods=['DELETE'])
     def delete_text(cts_urn):
+        if cts_urn.count(':') > 3:
+            return tv5api.errors.too_specific(308, flask.request.path)
         found = flask.g.db.find(
             tesserae.db.entities.Text.collection,
-            cts_urn=cts_urn)[0]
+            cts_urn=cts_urn)
         if not found:
-            # TODO differentiate from case where CTS URN is overly specific
-            # (308)
             return tv5api.errors.error(
                 404,
                 cts_urn=cts_urn,
