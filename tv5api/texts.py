@@ -76,8 +76,37 @@ def get_text(cts_urn):
 @bp.route('/<cts_urn>/units/')
 def get_text_units(cts_urn):
     """Retrieve text chunks already in the database for the specified text"""
-    # TODO
-    return tv5api.errors.error(500, message='Not yet implemented')
+    # TODO finish
+    unit_types = [u for u in flask.request.args]
+    result = {}
+    found = flask.g.db.find(
+        tesserae.db.entities.Text.collection,
+        cts_urn=cts_urn)
+    if not found:
+        return tv5api.errors.error(
+            404,
+            cts_urn=cts_urn,
+            units=unit_types,
+            message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
+    text_path = found[0].path
+    bad_types = []
+    for unit_type in unit_types:
+        found = flask.g.db.find(
+            tesserae.db.entities.Unit.collection,
+            text=text_path,
+            unit_type=unit_type)
+        if not found:
+            bad_types.append(unit_type)
+        else:
+            result[unit_type] = [f.cts_urn for f in found]
+    if bad_types:
+        return tv5api.errors.error(
+            400,
+            cts_urn=cts_urn,
+            units=unit_types,
+            message='The following unit type(s) could not be found for the specified CTS URN ({}): {}'.format(cts_urn, ', '.join(bad_types)))
+
+    return flask.jsonify(result)
 
 
 if os.environ.get('ADMIN_INSTANCE') == 'true':

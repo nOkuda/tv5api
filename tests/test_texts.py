@@ -5,6 +5,8 @@ import urllib.parse
 import flask
 import werkzeug.datastructures
 
+import tesserae.db.entities
+
 
 def test_query_texts(client):
     response = client.get('/texts/')
@@ -28,8 +30,58 @@ def test_query_texts_with_fields(app, client):
 
 
 def test_get_text_units(app, client):
-    # TODO
-    assert False
+    cts_urn = 'cts:urn:test'
+    text_path = '/path/'
+    text = tesserae.db.entities.Text(cts_urn=cts_urn, path=text_path)
+    units = [
+        tesserae.db.entities.Unit(
+            cts_urn=cts_urn+':1.1', text=text_path, unit_type='lines'),
+        tesserae.db.entities.Unit(
+            cts_urn=cts_urn+':1.2', text=text_path, unit_type='lines'),
+        tesserae.db.entities.Unit(
+            cts_urn=cts_urn+':1.3', text=text_path, unit_type='lines'),
+        tesserae.db.entities.Unit(
+            cts_urn=cts_urn+':1.1-1.2@[10]', text=text_path, unit_type='phrases'),
+        tesserae.db.entities.Unit(
+            cts_urn=cts_urn+':1.2@[11]-1.3', text=text_path, unit_type='phrases'),
+    ]
+
+    with app.test_request_context():
+        app.preprocess_request()
+        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn)
+        flask.g.db.insert(text)
+        flask.g.db.insert(units)
+    response = client.get(endpoint)
+    assert not response.get_json()
+
+    with app.test_request_context():
+        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
+                lines='true')
+    response = client.get(endpoint)
+    data = response.get_json()
+    assert 'lines' in data
+    assert 'phrases' not in data
+
+    with app.test_request_context():
+        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
+                phrases='true')
+    response = client.get(endpoint)
+    data = response.get_json()
+    assert 'lines' not in data
+    assert 'phrases' in data
+
+    with app.test_request_context():
+        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
+                lines='true', phrases='true')
+    response = client.get(endpoint)
+    data = response.get_json()
+    assert 'lines' in data
+    assert 'phrases' in data
+
+    with app.test_request_context():
+        app.preprocess_request()
+        for coll_name in flask.g.db.connection.list_collection_names():
+            flask.g.db.connection.drop_collection(coll_name)
 
 
 if os.environ.get('ADMIN_INSTANCE') == 'true':
@@ -161,6 +213,9 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
         patch = {
             'title': 'Pharsalia',
+            'extras': {
+                'new_key': 'new_value',
+            }
         }
         headers = werkzeug.datastructures.Headers()
         headers['Content-Type'] = 'application/json; charset=utf-8'
