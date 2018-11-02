@@ -33,6 +33,7 @@ def test_get_text_units(app, client):
     cts_urn = 'cts:urn:test'
     text_path = '/path/'
     text = tesserae.db.entities.Text(cts_urn=cts_urn, path=text_path)
+    # TODO update with new way of identifying cts_urn
     units = [
         tesserae.db.entities.Unit(
             cts_urn=cts_urn+':1.1', text=text_path, unit_type='lines'),

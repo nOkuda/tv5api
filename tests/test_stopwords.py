@@ -4,6 +4,8 @@ import os
 import flask
 import werkzeug.datastructures
 
+import tesserae.db.entities
+
 
 def test_stopwords(client):
     # TODO fill this in
@@ -11,8 +13,14 @@ def test_stopwords(client):
 
 
 def test_stopwords_lists(app, client):
+    stopwords_list = tesserae.db.entities.StopwordsList(
+        name='test_list',
+        stopwords=['a','b'])
     with app.test_request_context():
+        app.preprocess_request()
         endpoint = flask.url_for('stopwords.query_stopwords_lists')
+        flask.g.db.insert(stopwords_list)
+
     response = client.get(endpoint)
     assert response.status_code == 200
     data = response.get_json()
@@ -24,6 +32,11 @@ def test_stopwords_lists(app, client):
     assert response.status_code == 200
     data = response.get_json()
     assert 'stopwords' in data and isinstance(data['stopwords'], list)
+
+    with app.test_request_context():
+        app.preprocess_request()
+        for coll_name in flask.g.db.connection.list_collection_names():
+            flask.g.db.connection.drop_collection(coll_name)
 
 
 if os.environ.get('ADMIN_INSTANCE') == 'true':
@@ -47,7 +60,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
             data=json.dumps(for_post1).encode(encoding='utf-8'),
             headers=headers,
         )
-        assert response.header['Content-Location'] == endpoint
+        assert response.headers['Content-Location'] == endpoint
         data = response.get_json()
         assert 'stopwords' in data and isinstance(data['stopwords'], list)
 
@@ -68,10 +81,10 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         headers['Content-Type'] = 'application/json; charset=utf-8'
         response = client.post(
             post_endpoint,
-            data=json.dumps(for_post1).encode(encoding='utf-8'),
+            data=json.dumps(for_post2).encode(encoding='utf-8'),
             headers=headers,
         )
-        assert response.header['Content-Location'] == endpoint
+        assert response.headers['Content-Location'] == endpoint
         data = response.get_json()
         assert 'stopwords' in data and isinstance(data['stopwords'], list)
 
