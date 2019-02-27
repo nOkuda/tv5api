@@ -3,6 +3,8 @@ import json
 import os
 import urllib.parse
 
+from bson.objectid import ObjectId
+from bson.errors import InvalidId
 import flask
 
 import tv5api.errors
@@ -10,6 +12,16 @@ import tesserae.db.entities
 
 
 bp = flask.Blueprint('texts', __name__, url_prefix='/texts')
+
+
+def fix_id(entity_json):
+    """Replaces entity_json['id'] with entity_json['object_id']
+
+    Note that this updates entity_json in place
+    """
+    entity_json['object_id'] = entity_json['id']
+    del entity_json['id']
+    return entity_json
 
 
 @bp.route('/')
@@ -54,58 +66,28 @@ def query_texts():
         results = flask.g.db.find(
             tesserae.db.entities.Text.collection,
             **filters)
-    return flask.jsonify(texts=[r.json_encode(exclude=['_id']) for r in results])
+    return flask.jsonify(texts=[fix_id(r.json_encode()) for r in results])
 
 
-@bp.route('/<cts_urn>/')
-def get_text(cts_urn):
+@bp.route('/<object_id>/')
+def get_text(object_id):
     """Retrieve specific text's metadata"""
-    if cts_urn.count(':') > 3:
-        return tv5api.errors.too_specific(301, flask.request.path)
-    found = flask.g.db.find(
-        tesserae.db.entities.Text.collection,
-        cts_urn=cts_urn)
-    if not found:
-        return tv5api.errors.error(
-            404,
-            cts_urn=cts_urn,
-            message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
-    return flask.jsonify(found[0].json_encode(exclude=['_id']))
-
-
-@bp.route('/<cts_urn>/units/')
-def get_text_units(cts_urn):
-    """Retrieve text chunks already in the database for the specified text"""
-    # TODO finish
-    unit_types = [u for u in flask.request.args]
-    result = {}
-    found = flask.g.db.find(
-        tesserae.db.entities.Text.collection,
-        cts_urn=cts_urn)
-    if not found:
-        return tv5api.errors.error(
-            404,
-            cts_urn=cts_urn,
-            units=unit_types,
-            message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
-    text_path = found[0].path
-    bad_types = []
-    for unit_type in unit_types:
-        found = flask.g.db.find(
-            tesserae.db.entities.Unit.collection,
-            text=text_path,
-            unit_type=unit_type)
-        if not found:
-            bad_types.append(unit_type)
-        else:
-            result[unit_type] = [f.cts_urn for f in found]
-    if bad_types:
+    try:
+        object_id_obj = ObjectId(object_id)
+    except:
         return tv5api.errors.error(
             400,
-            cts_urn=cts_urn,
-            units=unit_types,
-            message='The following unit type(s) could not be found for the specified CTS URN ({}): {}'.format(cts_urn, ', '.join(bad_types)))
-
+            object_id=object_id,
+            message='Provided identifier ({}) is malformed.'.format(object_id))
+    found = flask.g.db.find(
+        tesserae.db.entities.Text.collection,
+        _id=object_id_obj)
+    if not found:
+        return tv5api.errors.error(
+            404,
+            object_id=object_id,
+            message='No text with the provided identifier ({}) was found in the database.'.format(object_id))
+    result = fix_id(found[0].json_encode())
     return flask.jsonify(result)
 
 
@@ -114,7 +96,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
     def add_text():
         received = flask.request.get_json()
         # error checking on request data
-        requireds = {'author', 'cts_urn', 'is_prose', 'language', 'path',
+        requireds = {'author', 'is_prose', 'language', 'path',
                 'title', 'year'}
         missing = []
         for req in requireds:
@@ -126,16 +108,10 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
                 data=received,
                 message='The request data payload is missing the following required key(s): {}'.format(', '.join(missing)))
 
-        cts_urn = received['cts_urn']
-        percent_encoded_cts_urn = urllib.parse.quote(cts_urn)
-        if flask.g.db.find(tesserae.db.entities.Text.collection, cts_urn=cts_urn):
-            return tv5api.errors.error(
-                400,
-                data=received,
-                message='The CTS URN provided ({}) already exists in the database. If you meant to update the text information, try a PATCH at https://tesserae.caset.buffalo.edu/texts/{}/.'.format(cts_urn, percent_encoded_cts_urn))
-
         # add text to database
         # TODO type checking here or in library?
+        if 'object_id' in received:
+            del received['object_id']
         insert_result = flask.g.db.insert(tesserae.db.entities.Text(**received))
 
         if not insert_result.inserted_ids:
@@ -144,32 +120,41 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
                 data=received,
                 message='Could not add to database')
 
+        object_id = str(insert_result.inserted_ids[0])
+        received['object_id'] = object_id
+        percent_encoded_object_id = urllib.parse.quote(object_id)
+
         response = flask.Response()
         response.status_code = 201
         response.status = '201 Created'
         response.headers['Content-Location'] = os.path.join(
-            bp.url_prefix, percent_encoded_cts_urn, '')
+            bp.url_prefix, percent_encoded_object_id, '')
         response.headers['Content-Type'] = 'application/json; charset=utf-8'
         response.set_data(flask.json.dumps(received).encode('utf-8'))
         return response
 
 
-    @bp.route('/<cts_urn>/', methods=['PATCH'])
-    def update_text(cts_urn):
+    @bp.route('/<object_id>/', methods=['PATCH'])
+    def update_text(object_id):
+        try:
+            object_id_obj = ObjectId(object_id)
+        except:
+            return tv5api.errors.error(
+                400,
+                object_id=object_id,
+                message='Provided identifier ({}) is malformed.'.format(object_id))
         received = flask.request.get_json()
-        if cts_urn.count(':') > 3:
-            return tv5api.errors.too_specific(308, flask.request.path)
         found = flask.g.db.find(
             tesserae.db.entities.Text.collection,
-            cts_urn=cts_urn)
+            _id=object_id_obj)
         if not found:
             return tv5api.errors.error(
                 404,
-                cts_urn=cts_urn,
+                object_id=object_id,
                 data=received,
-                message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
+                message='No text with the provided identifier ({}) was found in the database.'.format(object_id))
 
-        prohibited = {'_id', 'id', 'cts_urn'}
+        prohibited = {'_id', 'id', 'object_id'}
         problems = []
         for key in prohibited:
             if key in received:
@@ -177,7 +162,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         if problems:
             return tv5api.errors.error(
                 400,
-                cts_urn=cts_urn,
+                object_id=object_id,
                 data=received,
                 message='Prohibited key(s) found in data payload: {}'.format(', '.join(problems)))
 
@@ -187,24 +172,29 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         if updated.matched_count != 1:
             return tv5api.errors.error(
                 500,
-                cts_urn=cts_urn,
+                object_id=object_id,
                 data=received,
                 message='Unexpected number of updates: {}'.format(updated.matched_count))
-        return get_text(cts_urn)
+        return get_text(object_id)
 
 
-    @bp.route('/<cts_urn>/', methods=['DELETE'])
-    def delete_text(cts_urn):
-        if cts_urn.count(':') > 3:
-            return tv5api.errors.too_specific(308, flask.request.path)
+    @bp.route('/<object_id>/', methods=['DELETE'])
+    def delete_text(object_id):
+        try:
+            object_id_obj = ObjectId(object_id)
+        except:
+            return tv5api.errors.error(
+                400,
+                object_id=object_id,
+                message='Provided identifier ({}) is malformed.'.format(object_id))
         found = flask.g.db.find(
             tesserae.db.entities.Text.collection,
-            cts_urn=cts_urn)
+            _id=object_id_obj)
         if not found:
             return tv5api.errors.error(
                 404,
-                cts_urn=cts_urn,
-                message='No text with the provided CTS URN ({}) was found in the database.'.format(cts_urn))
+                object_id=object_id,
+                message='No text with the provided identifier ({}) was found in the database.'.format(object_id))
         # TODO check for proper deletion?
         flask.g.db.delete(found).deleted_count
         response = flask.Response()

@@ -1,2 +1,3 @@
 flask
 pytest
+-e git+git@github.com:tesserae/tesserae-v5.git#egg=tesserae

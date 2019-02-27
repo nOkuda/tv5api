@@ -29,80 +29,16 @@ def test_query_texts_with_fields(app, client):
         assert text['language'] == lang
 
 
-def test_get_text_units(app, client):
-    cts_urn = 'cts:urn:test'
-    text_path = '/path/'
-    text = tesserae.db.entities.Text(cts_urn=cts_urn, path=text_path)
-    # TODO update with new way of identifying cts_urn
-    units = [
-        tesserae.db.entities.Unit(
-            cts_urn=cts_urn+':1.1', text=text_path, unit_type='lines'),
-        tesserae.db.entities.Unit(
-            cts_urn=cts_urn+':1.2', text=text_path, unit_type='lines'),
-        tesserae.db.entities.Unit(
-            cts_urn=cts_urn+':1.3', text=text_path, unit_type='lines'),
-        tesserae.db.entities.Unit(
-            cts_urn=cts_urn+':1.1-1.2@[10]', text=text_path, unit_type='phrases'),
-        tesserae.db.entities.Unit(
-            cts_urn=cts_urn+':1.2@[11]-1.3', text=text_path, unit_type='phrases'),
-    ]
-
-    with app.test_request_context():
-        app.preprocess_request()
-        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn)
-        flask.g.db.insert(text)
-        flask.g.db.insert(units)
-    response = client.get(endpoint)
-    assert not response.get_json()
-
-    with app.test_request_context():
-        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
-                lines='true')
-    response = client.get(endpoint)
-    data = response.get_json()
-    assert 'lines' in data
-    assert 'phrases' not in data
-
-    with app.test_request_context():
-        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
-                phrases='true')
-    response = client.get(endpoint)
-    data = response.get_json()
-    assert 'lines' not in data
-    assert 'phrases' in data
-
-    with app.test_request_context():
-        endpoint = flask.url_for('texts.get_text_units', cts_urn=cts_urn,
-                lines='true', phrases='true')
-    response = client.get(endpoint)
-    data = response.get_json()
-    assert 'lines' in data
-    assert 'phrases' in data
-
-    with app.test_request_context():
-        app.preprocess_request()
-        for coll_name in flask.g.db.connection.list_collection_names():
-            flask.g.db.connection.drop_collection(coll_name)
-
-
 if os.environ.get('ADMIN_INSTANCE') == 'true':
     def test_add_and_remove_text(app, client):
-        new_cts_urn = 'urn:cts:test'
 
         before = {
-            text['cts_urn']: text
+            text['object_id']: text
             for text in client.get('/texts/').get_json()['texts']
         }
 
-        # make sure the new text isn't in the database
-        with app.test_request_context():
-            endpoint = flask.url_for('texts.get_text', cts_urn=new_cts_urn)
-        response = client.get(endpoint)
-        assert response.status_code == 404
-
         to_be_added = {
             'author': 'Bob',
-            'cts_urn': new_cts_urn,
             'is_prose': False,
             'language': 'english',
             'path': '/bob.txt',
@@ -119,18 +55,24 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         # make sure the response data is correct
         assert response.status_code == 201
         for k, v in response.get_json().items():
-            assert k in to_be_added and v == to_be_added[k]
+            if k == 'object_id':
+                new_obj_id = v
+            else:
+                assert k in to_be_added and v == to_be_added[k]
 
+        # make sure the new text isn't in the database
+        with app.test_request_context():
+            endpoint = flask.url_for('texts.get_text', object_id=new_obj_id)
         # make sure the new text is now in the database
         assert client.get(endpoint).get_json()
 
         # make sure adding doesn't mess up the database
         after_add = {
-            text['cts_urn']: text
+            text['object_id']: text
             for text in client.get('/texts/').get_json()['texts']
         }
         for k, v in after_add.items():
-            if k != new_cts_urn:
+            if k != new_obj_id:
                 assert k in before and v == before[k]
 
         response = client.delete(endpoint)
@@ -141,31 +83,11 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
         # make sure adding then deleting doesn't mess up the database
         after_delete = {
-            text['cts_urn']: text
+            text['object_id']: text
             for text in client.get('/texts/').get_json()['texts']
         }
         for k, v in after_delete.items():
             assert k in before and v == before[k]
-
-
-    def test_add_text_already_in_database(client):
-        to_be_added = {
-            'cts_urn': 'urn:cts:latinLit:phi0472.phi001',
-        }
-
-        headers = werkzeug.datastructures.Headers()
-        headers['Content-Type'] = 'application/json; charset=utf-8'
-        response = client.post(
-            '/texts/',
-            data=json.dumps(to_be_added).encode(encoding='utf-8'),
-            headers=headers,
-        )
-        assert response.status_code == 400
-        data = response.get_json()
-        assert 'data' in data
-        for k, v in data['data'].items():
-            assert k in to_be_added and v == to_be_added[k]
-        assert 'message' in data
 
 
     def test_add_text_insufficient_data(client):
@@ -188,10 +110,8 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
 
 
     def test_patch_then_replace_text(app, client):
-        new_cts_urn = 'urn:cts:test'
         to_be_added = {
             'author': 'Bob',
-            'cts_urn': new_cts_urn,
             'is_prose': False,
             'language': 'english',
             'path': '/bob.txt',
@@ -205,11 +125,12 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
             data=json.dumps(to_be_added).encode(encoding='utf-8'),
             headers=headers,
         )
+        new_obj_id = response.get_json()['object_id']
 
         with app.test_request_context():
             endpoint = flask.url_for(
                 'texts.get_text',
-                cts_urn=new_cts_urn)
+                object_id=new_obj_id)
         before = client.get(endpoint).get_json()
 
         patch = {
@@ -247,51 +168,25 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         assert response.status_code == 201
         data = response.get_json()
         for k, v in data.items():
-            assert k in before and before[k] == v
+            if k != 'object_id':
+                assert k in before and before[k] == v
 
+        with app.test_request_context():
+            endpoint = flask.url_for(
+                'texts.get_text',
+                object_id=data['object_id'])
         response = client.delete(endpoint)
         assert response.status_code == 204
         response = client.get(endpoint)
         assert response.status_code == 404
 
 
-    def test_redirects(app, client):
-        base_urn = 'urn:cts:latinLit:phi0472.phi001'
-        expected_end = urllib.parse.quote_plus(base_urn) + '/'
-        specific_urn = base_urn + ':1.1'
-        with app.test_request_context():
-            endpoint = flask.url_for(
-                'texts.get_text',
-                cts_urn=specific_urn,
-            )
-        response = client.get(endpoint)
-        assert response.status_code == 301
-        assert response.headers['Location'].endswith(expected_end)
-
-        headers = werkzeug.datastructures.Headers()
-        headers['Content-Type'] = 'application/json; charset=utf-8'
-        patch = {'fail': 'this example will'}
-        response = client.patch(
-            endpoint,
-            data=json.dumps(patch).encode(encoding='utf-8'),
-            headers=headers,
-        )
-        assert response.status_code == 308
-        assert response.headers['Location'].endswith(expected_end)
-
-        response = client.delete(
-            endpoint,
-        )
-        assert response.status_code == 308
-        assert response.headers['Location'].endswith(expected_end)
-
-
     def test_nonexistent_text(app, client):
-        nonexistent = 'DEADBEEF'
+        nonexistent = 'DEADBEEFDEADBEEFDEADBEEF'
         with app.test_request_context():
             endpoint = flask.url_for(
                 'texts.get_text',
-                cts_urn=nonexistent,
+                object_id=nonexistent,
             )
 
         # make sure the text doesn't exist
@@ -301,7 +196,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         response = client.delete(endpoint)
         assert response.status_code == 404
         data = response.get_json()
-        assert 'cts_urn' in data and data['cts_urn'] == nonexistent
+        assert 'object_id' in data and data['object_id'] == nonexistent
         assert 'message' in data
 
         patch = {'fail': 'this example will'}
@@ -314,5 +209,7 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         )
         assert response.status_code == 404
         data = response.get_json()
-        assert 'cts_urn' in data and data['cts_urn'] == nonexistent
+        assert 'object_id' in data and data['object_id'] == nonexistent
         assert 'message' in data
+
+    # TODO check for 400 errors when object_ids are bad
