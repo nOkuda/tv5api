@@ -165,6 +165,16 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
             data=json.dumps(before).encode(encoding='utf-8'),
             headers=headers,
         )
+        assert response.status_code == 400
+
+        del before['object_id']
+        headers = werkzeug.datastructures.Headers()
+        headers['Content-Type'] = 'application/json; charset=utf-8'
+        response = client.post(
+            '/texts/',
+            data=json.dumps(before).encode(encoding='utf-8'),
+            headers=headers,
+        )
         assert response.status_code == 201
         data = response.get_json()
         for k, v in data.items():

@@ -107,11 +107,19 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
                 400,
                 data=received,
                 message='The request data payload is missing the following required key(s): {}'.format(', '.join(missing)))
+        prohibiteds = {'_id', 'id', 'object_id'}
+        found = []
+        for prohib in prohibiteds:
+            if prohib in received:
+                found.append(prohib)
+        if found:
+            return tv5api.errors.error(
+                400,
+                data=received,
+                message='The request data payload contains the following prohibited key(s): {}'.format(', '.join(found)))
 
         # add text to database
         # TODO type checking here or in library?
-        if 'object_id' in received:
-            del received['object_id']
         insert_result = flask.g.db.insert(tesserae.db.entities.Text(**received))
 
         if not insert_result.inserted_ids:
