@@ -9,6 +9,7 @@ import flask
 
 import tv5api.errors
 import tesserae.db.entities
+import tesserae.utils
 
 
 bp = flask.Blueprint('texts', __name__, url_prefix='/texts')
@@ -118,17 +119,17 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
                 data=received,
                 message='The request data payload contains the following prohibited key(s): {}'.format(', '.join(found)))
 
-        # add text to database
-        # TODO type checking here or in library?
-        insert_result = flask.g.db.insert(tesserae.db.entities.Text(**received))
-
-        if not insert_result.inserted_ids:
+        try:
+            # add text to database
+            insert_id = tesserae.utils.ingest_text(
+                flask.g.db, tesserae.db.entities.Text(**received))
+        except Exception as e:
             return tv5api.errors.error(
                 500,
                 data=received,
-                message='Could not add to database')
+                message='Could not add to database: {}'.format(e))
 
-        object_id = str(insert_result.inserted_ids[0])
+        object_id = str(insert_id)
         received['object_id'] = object_id
         percent_encoded_object_id = urllib.parse.quote(object_id)
 

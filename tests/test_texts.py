@@ -40,8 +40,8 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         to_be_added = {
             'author': 'Bob',
             'is_prose': False,
-            'language': 'english',
-            'path': '/bob.txt',
+            'language': 'latin',
+            'path': os.path.join(os.path.dirname(__file__), 'bob.txt'),
             'title': 'Bob Bob',
             'year': 2018
         }
@@ -113,8 +113,8 @@ if os.environ.get('ADMIN_INSTANCE') == 'true':
         to_be_added = {
             'author': 'Bob',
             'is_prose': False,
-            'language': 'english',
-            'path': '/bob.txt',
+            'language': 'latin',
+            'path': os.path.join(os.path.dirname(__file__), 'bob.txt'),
             'title': 'Bob Bob',
             'year': 2018
         }
